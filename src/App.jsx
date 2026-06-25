@@ -359,6 +359,7 @@ function crearEstadoInicialEntrega(fechaEntrega = "") {
     fechaEntrega,
     asesorVentas: "",
     comentarios: "",
+    entregaReportada: false,
   };
 }
 
@@ -387,7 +388,7 @@ function crearPayloadEntrega(form) {
     version: form.version,
     color: form.color,
     fecha_hora_entrega: form.fechaEntrega || null,
-    entrega_reportada: true,
+    entrega_reportada: !!form.entregaReportada,
     asesor_ventas: form.asesorVentas,
     preparada_por: "",
     id_cliente_sf_nadin: "",
@@ -1323,15 +1324,37 @@ function ModalRegistroEntrega({ abierto, fechaEntregaInicial, onClose, onGuardad
               </select>
             </CampoModal>
 
-            <div className="md:col-span-2 xl:col-span-2">
+            <CampoModal>
+              <LabelModal icon={<UserCheck size={14} />} text="Entrega física" />
+              <button
+                type="button"
+                disabled={deshabilitado}
+                onClick={() => setCampo("entregaReportada", !form.entregaReportada)}
+                className={[
+                  "inline-flex h-[42px] w-full items-center justify-center gap-2 rounded-xl border px-3 text-sm font-black transition disabled:opacity-60",
+                  form.entregaReportada
+                    ? "border-emerald-300 bg-emerald-100 text-emerald-800 hover:bg-emerald-200"
+                    : "border-amber-300 bg-amber-100 text-amber-800 hover:bg-amber-200",
+                ].join(" ")}
+              >
+                {form.entregaReportada ? (
+                  <CheckCircle2 className="h-4 w-4" />
+                ) : (
+                  <Clock3 className="h-4 w-4" />
+                )}
+                {form.entregaReportada ? "Entrega física realizada" : "Entrega física pendiente"}
+              </button>
+            </CampoModal>
+
+            <div>
               <LabelModal icon={<MessageSquare size={14} />} text="Comentarios" />
               <textarea
                 placeholder="Notas internas..."
-                rows={4}
+                rows={1}
                 value={form.comentarios}
                 disabled={deshabilitado}
                 onChange={(e) => setCampo("comentarios", e.target.value)}
-                className="mt-1.5 w-full resize-none rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-[#131E5C] outline-none transition placeholder:text-slate-400 focus:border-[#131E5C] focus:ring-2 focus:ring-[#131E5C]/15 disabled:opacity-60"
+                className="mt-1.5 h-[42px] w-full resize-none rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-[#131E5C] outline-none transition placeholder:text-slate-400 focus:border-[#131E5C] focus:ring-2 focus:ring-[#131E5C]/15 disabled:opacity-60"
               />
             </div>
           </div>
