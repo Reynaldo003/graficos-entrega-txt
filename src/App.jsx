@@ -346,6 +346,31 @@ function crearFechaHoraLocal(dayKey, hour) {
   return `${dayKey}T${hour}`;
 }
 
+
+function splitFechaHora(fechaHora) {
+  if (!fechaHora) return { dia: "", hora: "" };
+
+  const [dia, horaCompleta] = fechaHora.split("T");
+
+  return {
+    dia: dia || "",
+    hora: horaCompleta ? horaCompleta.slice(0, 5) : "",
+  };
+}
+
+
+function formatFechaBonita(dia) {
+  if (!dia) return "";
+
+  const date = parseYMDLocal(dia);
+
+  return date.toLocaleDateString("es-MX", {
+    weekday: "long",
+    day: "2-digit",
+    month: "long",
+  });
+}
+
 function crearEstadoInicialEntrega(fechaEntrega = "") {
   return {
     dealer: DEFAULT_DEALER,
@@ -1012,7 +1037,7 @@ function LabelModal({ icon, text, required = false }) {
   );
 }
 
-function ModalRegistroEntrega({ abierto, fechaEntregaInicial, onClose, onGuardado }) {
+function ModalRegistroEntrega({ abierto, fechaEntregaInicial, entregasOcupadas = [], onClose, onGuardado }) {
   const [form, setForm] = useState(() =>
     crearEstadoInicialEntrega(fechaEntregaInicial)
   );
@@ -1028,7 +1053,29 @@ function ModalRegistroEntrega({ abierto, fechaEntregaInicial, onClose, onGuardad
     setErrorGeneral("");
   }, [abierto, fechaEntregaInicial]);
 
+  const { dia: diaSeleccionado, hora: horaSeleccionada } = splitFechaHora(
+    form.fechaEntrega
+  );
+
+  // Horas ya ocupadas para el día seleccionado (para bloquear el chip de hora)
+  const horasOcupadas = useMemo(() => {
+    if (!diaSeleccionado) return new Set();
+
+    const set = new Set();
+
+    for (const row of entregasOcupadas) {
+      if (!row.fecha_hora_entrega) continue;
+
+      if (toYMDLocal(row.fecha_hora_entrega) === diaSeleccionado) {
+        set.add(getHourKey(row.fecha_hora_entrega));
+      }
+    }
+
+    return set;
+  }, [entregasOcupadas, diaSeleccionado]);
+
   if (!abierto) return null;
+
 
   const deshabilitado = guardando;
 
@@ -1059,6 +1106,10 @@ function ModalRegistroEntrega({ abierto, fechaEntregaInicial, onClose, onGuardad
     if (!form.color) nuevosErrores.color = "Selecciona un color.";
     if (!form.fechaEntrega) {
       nuevosErrores.fechaEntrega = "Selecciona fecha y hora de entrega.";
+    } else if (!horaSeleccionada) {
+      nuevosErrores.fechaEntrega = "Selecciona una hora disponible.";
+    } else if (horasOcupadas.has(horaSeleccionada)) {
+      nuevosErrores.fechaEntrega = "Ese horario ya está ocupado, elige otro.";
     }
     if (!form.asesorVentas.trim()) {
       nuevosErrores.asesorVentas = "Selecciona el asesor de ventas.";
@@ -1135,8 +1186,10 @@ function ModalRegistroEntrega({ abierto, fechaEntregaInicial, onClose, onGuardad
             <h2 className="mt-1 text-xl font-black sm:text-2xl">
               Programar entrega
             </h2>
-            <p className="mt-1 text-xs font-semibold text-white/75">
-              Horario seleccionado: {formatDateTime(form.fechaEntrega)}
+            <p className="mt-1 text-xs font-semibold capitalize text-white/75">
+              {diaSeleccionado && horaSeleccionada
+                ? `${formatFechaBonita(diaSeleccionado)} · ${horaSeleccionada}`
+                : "Selecciona fecha y hora"}
             </p>
           </div>
 
@@ -1296,16 +1349,66 @@ function ModalRegistroEntrega({ abierto, fechaEntregaInicial, onClose, onGuardad
               </select>
             </CampoModal>
 
-            <CampoModal error={errores.fechaEntrega}>
-              <LabelModal icon={<Calendar size={14} />} text="Fecha y hora" required />
-              <input
-                type="datetime-local"
-                value={form.fechaEntrega}
-                disabled={deshabilitado}
-                onChange={(e) => setCampo("fechaEntrega", e.target.value)}
-                className={`${inputModalBase} ${errores.fechaEntrega ? "border-red-500" : "border-slate-300"}`}
-              />
-            </CampoModal>
+            <div className="md:col-span-2 xl:col-span-3">
+              <CampoModal error={errores.fechaEntrega}>
+                <LabelModal icon={<Calendar size={14} />} text="Fecha y hora" required />
+
+                <div className="grid gap-3 rounded-xl border border-slate-300 bg-slate-50 p-3">
+                  <input
+                    type="date"
+                    value={diaSeleccionado}
+                    disabled={deshabilitado}
+                    onChange={(e) => {
+                      const nuevoDia = e.target.value;
+
+                      setCampo(
+                        "fechaEntrega",
+                        nuevoDia ? `${nuevoDia}T${horaSeleccionada || ""}` : ""
+                      );
+                    }}
+                    className={`${inputModalBase} ${errores.fechaEntrega ? "border-red-500" : "border-slate-300"}`}
+                  />
+
+                  <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-5">
+                    {HOURS.map((hour) => {
+                      const ocupado = horasOcupadas.has(hour);
+                      const seleccionado = horaSeleccionada === hour;
+
+                      return (
+                        <button
+                          key={hour}
+                          type="button"
+                          disabled={deshabilitado || !diaSeleccionado || ocupado}
+                          onClick={() =>
+                            setCampo("fechaEntrega", `${diaSeleccionado}T${hour}`)
+                          }
+                          title={ocupado ? "Horario ocupado" : hour}
+                          className={[
+                            "flex flex-col items-center justify-center gap-0.5 rounded-lg border px-2 py-2 text-xs font-black transition disabled:cursor-not-allowed",
+                            ocupado
+                              ? "border-red-200 bg-red-50 text-red-400 line-through"
+                              : seleccionado
+                                ? "border-[#131E5C] bg-[#131E5C] text-white shadow-sm"
+                                : "border-slate-200 bg-white text-[#131E5C] hover:border-[#131E5C]/50 hover:bg-[#131E5C]/5",
+                          ].join(" ")}
+                        >
+                          {hour}
+                          {ocupado ? (
+                            <span className="text-[9px] font-bold normal-case">Ocupado</span>
+                          ) : null}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {!diaSeleccionado ? (
+                    <span className="text-[11px] font-semibold text-slate-400">
+                      Selecciona primero un día para ver horarios disponibles.
+                    </span>
+                  ) : null}
+                </div>
+              </CampoModal>
+            </div>
 
             <CampoModal error={errores.asesorVentas}>
               <LabelModal icon={<UserCheck size={14} />} text="Asesor ventas" required />
@@ -2707,6 +2810,7 @@ export default function App() {
         <ModalRegistroEntrega
           abierto={modalRegistro.abierto}
           fechaEntregaInicial={modalRegistro.fechaEntrega}
+          entregasOcupadas={dealerRows}
           onClose={cerrarModalRegistro}
           onGuardado={handleEntregaGuardada}
         />
