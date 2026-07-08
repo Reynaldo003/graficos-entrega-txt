@@ -381,6 +381,7 @@ function crearEstadoInicialEntrega(fechaEntrega = "") {
     modelo: "",
     version: "",
     color: "",
+    kilometraje: "",
     fechaEntrega,
     asesorVentas: "",
     comentarios: "",
@@ -412,6 +413,7 @@ function crearPayloadEntrega(form) {
     modelo_version: form.modelo,
     version: form.version,
     color: form.color,
+    kilometraje: form.kilometraje ? Number(form.kilometraje) : null,
     fecha_hora_entrega: form.fechaEntrega || null,
     entrega_reportada: !!form.entregaReportada,
     asesor_ventas: form.asesorVentas,
@@ -1349,6 +1351,21 @@ function ModalRegistroEntrega({ abierto, fechaEntregaInicial, entregasOcupadas =
               </select>
             </CampoModal>
 
+            <CampoModal error={errores.kilometraje}>
+              <LabelModal icon={<Gauge size={14} />} text="Kilometraje" />
+              <input
+                type="number"
+                inputMode="numeric"
+                placeholder="Ej. 15"
+                min={0}
+                step={1}
+                value={form.kilometraje}
+                disabled={deshabilitado}
+                onChange={(e) => setCampo("kilometraje", e.target.value)}
+                className={`${inputModalBase} ${errores.kilometraje ? "border-red-500" : "border-slate-300"}`}
+              />
+            </CampoModal>
+
             <div className="md:col-span-2 xl:col-span-3">
               <CampoModal error={errores.fechaEntrega}>
                 <LabelModal icon={<Calendar size={14} />} text="Fecha y hora" required />
@@ -2062,11 +2079,12 @@ export default function App() {
     dir: "desc",
   });
 
-  const [filters, setFilters] = useState({
-    q: "",
-    rangoDesde: "",
-    rangoHasta: "",
-  });
+ const [filters, setFilters] = useState({
+  q: "",
+  rangoDesde: "",
+  rangoHasta: "",
+  tipoVenta: "",
+});
 
   const [loadingList, setLoadingList] = useState(false);
   const [modalRegistro, setModalRegistro] = useState({
@@ -2181,7 +2199,18 @@ export default function App() {
         if (hastaInt !== null && ymdInt > hastaInt) matchRango = false;
       }
 
-      return matchQ && matchRango;
+      let matchTipoVenta = true;
+
+      if (filters.tipoVenta) {
+        if (filters.tipoVenta === "Sin capturar") {
+          matchTipoVenta = !normalizeStr(item.tipo_venta);
+        } else {
+          matchTipoVenta =
+            normalizeKey(item.tipo_venta) === normalizeKey(filters.tipoVenta);
+        }
+      }
+
+      return matchQ && matchRango && matchTipoVenta;
     });
   }, [dealerRows, filters]);
 
@@ -2389,8 +2418,12 @@ export default function App() {
       a.hora.localeCompare(b.hora)
     );
 
+    const entregasFisicasRealizadas = sorted.filter((row) =>
+      entregaFisicaActiva(row.entrega_reportada)
+    );
+
     const porAsesor = countBy(
-      sorted,
+      entregasFisicasRealizadas,
       (row) => row.asesor_ventas,
       "asesor"
     ).slice(0, 10);
@@ -2401,11 +2434,19 @@ export default function App() {
       "modelo"
     ).slice(0, 10);
 
-    const porTipoVenta = countBy(
-      sorted,
-      (row) => row.tipo_venta,
-      "tipoVenta"
-    ).slice(0, 10);
+    const sinCapturarTipoVenta = sorted.filter(
+  (row) => !normalizeStr(row.tipo_venta)
+).length;
+
+const porTipoVenta = [
+  ...TIPO_VENTA.map((tipo) => ({
+    tipoVenta: tipo,
+    total: sorted.filter(
+      (row) => normalizeKey(row.tipo_venta) === normalizeKey(tipo)
+    ).length,
+  })),
+  { tipoVenta: "Sin capturar", total: sinCapturarTipoVenta },
+].sort((a, b) => b.total - a.total);
 
     const porVersion = countBy(sorted, (row) => row.version, "version").slice(
       0,
@@ -2457,15 +2498,16 @@ export default function App() {
     };
   }, [chartData]);
 
-  const resetFilters = () => {
-    setFilters({
-      q: "",
-      rangoDesde: "",
-      rangoHasta: "",
-    });
+ const resetFilters = () => {
+  setFilters({
+    q: "",
+    rangoDesde: "",
+    rangoHasta: "",
+    tipoVenta: "",
+  });
 
-    setCurrentWeekDate(new Date());
-  };
+  setCurrentWeekDate(new Date());
+};
 
   const setHoy = () => {
     const hoy = toYMDLocal(new Date());
@@ -2541,18 +2583,18 @@ export default function App() {
 
         <section className="mb-5 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
           <div className="grid gap-3 md:grid-cols-12">
-            <div className="md:col-span-6">
+            <div className="md:col-span-3">
               <FilterBlock label="Búsqueda">
                 <div className="flex items-center gap-2 rounded-lg border border-slate-300 bg-slate-50 px-3 py-2.5 transition focus-within:border-[#131E5C] focus-within:bg-white">
-                  <Search className="h-4 w-4 text-[#131E5C]" />
+                  <Search className="h-4 w-4 shrink-0 text-[#131E5C]" />
 
                   <input
                     value={filters.q}
                     onChange={(e) =>
                       setFilters((prev) => ({ ...prev, q: e.target.value }))
                     }
-                    placeholder="Buscar por cliente, teléfono, VIN, tipo de venta, modelo, versión, color, asesor..."
-                    className="w-full bg-transparent text-sm font-semibold text-[#131E5C] outline-none placeholder:text-slate-400"
+                    placeholder="Buscar..."
+                    className="w-full min-w-0 bg-transparent text-sm font-semibold text-[#131E5C] outline-none placeholder:text-slate-400"
                   />
 
                   {filters.q ? (
@@ -2561,7 +2603,7 @@ export default function App() {
                       onClick={() =>
                         setFilters((prev) => ({ ...prev, q: "" }))
                       }
-                      className="rounded-lg p-1 text-[#131E5C] hover:bg-slate-100 hover:text-red-500"
+                      className="shrink-0 rounded-lg p-1 text-[#131E5C] hover:bg-slate-100 hover:text-red-500"
                       aria-label="Limpiar búsqueda"
                     >
                       <X className="h-4 w-4" />
@@ -2594,6 +2636,26 @@ export default function App() {
                   }
                   className="w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2.5 text-sm font-semibold text-[#131E5C] outline-none transition focus:border-[#131E5C] focus:bg-white"
                 />
+              </FilterBlock>
+            </div>
+
+            <div className="md:col-span-3">
+              <FilterBlock label="Tipo de venta">
+                <select
+                  value={filters.tipoVenta}
+                  onChange={(e) =>
+                    setFilters((prev) => ({ ...prev, tipoVenta: e.target.value }))
+                  }
+                  className="w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2.5 text-sm font-semibold text-[#131E5C] outline-none transition focus:border-[#131E5C] focus:bg-white"
+                >
+                  <option value="">Todos</option>
+                  {TIPO_VENTA.map((tipo) => (
+                    <option key={tipo} value={tipo}>
+                      {tipo}
+                    </option>
+                  ))}
+                  <option value="Sin capturar">Sin capturar</option>
+                </select>
               </FilterBlock>
             </div>
 
