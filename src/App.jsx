@@ -101,17 +101,26 @@ const MODELOS = [
 ];
 
 const VERSIONES = [
+  "Track",
   "Trendline",
   "Comfortline",
   "Highline",
+  "Life",
+  "Style",
   "Sportline",
+  "R-Line",
   "GLI",
   "GTI",
   "R",
   "Peak Edition",
+  "Dark Label",
+  "Panamericana",
+  "Aventura",
   "Robust",
   "Extreme",
   "Goal",
+  "Maxi Cargo",
+  "Cargo Van",
 ];
 
 const COLORES = [
