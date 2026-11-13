@@ -1,3 +1,4 @@
+import "./entregas-tuxtepec-theme.css";
 // src/App.jsx
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -18,7 +19,6 @@ import {
   Clock3,
   TableProperties,
   BarChart3,
-  RefreshCcw,
   Palette,
   Trophy,
   Gauge,
@@ -37,6 +37,8 @@ import {
   User,
   UserCheck,
   Layers3,
+  SlidersHorizontal,
+  CircleHelp,
 } from "lucide-react";
 
 import {
@@ -75,7 +77,6 @@ const PIE_COLORS = [EMERALD, AMBER];
 const DEALERS = [
   "VW Tuxtepec",
 ];
-
 const TIPO_VENTA = ["Nuevos", "Usados", "Comerciales"];
 
 const MODELOS = [
@@ -112,6 +113,7 @@ const VERSIONES = [
   "GLI",
   "GTI",
   "GT",
+  "Track",
   "R",
   "Peak Edition",
   "Dark Label",
@@ -168,6 +170,17 @@ const ASESORES = [
   "EDGAR JESUS GOMEZ PEREZ",
   "VALERIA ZILLI DURANTE",
   "Idalmy Jiménez",
+  "Carlos Arturo Garces Vengas",
+  "Edgar Omar Noguera Solis",
+  "Javier Perez Meraz",
+  "Luis Armando Almora Perez",
+  "Mara Erubey Soto Villegas",
+  "Sergio Ivan Quintana Martinez",
+  "Sergio Rene Delgado Sarmiento",
+  "Yoseth Ruiz Castellanos",
+  "Blanca Patricia Hernández Hernández", 
+  "Luis Manuel Hernández Espejo",
+  "Luz Eugenia Hernandez Bustos",
 ];
 
 function normalizeStr(value) {
@@ -183,6 +196,21 @@ function normalizeKey(value) {
 
 function sameDealer(value) {
   return normalizeKey(value) === normalizeKey(DEFAULT_DEALER);
+}
+
+function existeConflictoHorario(entregas, dealer, fechaHoraISO, idExcluir = null) {
+  if (!dealer || !fechaHoraISO) return false;
+
+  const objetivo = new Date(fechaHoraISO).getTime();
+  if (Number.isNaN(objetivo)) return false;
+
+  return entregas.some((row) => {
+    if (idExcluir && row.id === idExcluir) return false;
+    if (normalizeKey(row.agencia) !== normalizeKey(dealer)) return false;
+    if (!row.fecha_hora_entrega) return false;
+
+    return new Date(row.fecha_hora_entrega).getTime() === objetivo;
+  });
 }
 
 function entregaFisicaActiva(value) {
@@ -359,29 +387,32 @@ function crearFechaHoraLocal(dayKey, hour) {
   return `${dayKey}T${hour}`;
 }
 
-
-function splitFechaHora(fechaHora) {
-  if (!fechaHora) return { dia: "", hora: "" };
-
-  const [dia, horaCompleta] = fechaHora.split("T");
-
-  return {
-    dia: dia || "",
-    hora: horaCompleta ? horaCompleta.slice(0, 5) : "",
-  };
+function combinarFechaHora(fechaYMD, hora) {
+  if (!fechaYMD || !hora) return "";
+  return `${fechaYMD}T${hora}`;
 }
 
+function partirFechaHora(fechaHoraLocal) {
+  if (!fechaHoraLocal || !fechaHoraLocal.includes("T")) {
+    return { fecha: "", hora: "" };
+  }
+  const [fecha, horaCompleta] = fechaHoraLocal.split("T");
+  return { fecha, hora: horaCompleta ? horaCompleta.slice(0, 5) : "" };
+}
 
-function formatFechaBonita(dia) {
-  if (!dia) return "";
+function formatEncabezadoFecha(fechaHoraLocal) {
+  const { fecha, hora } = partirFechaHora(fechaHoraLocal);
+  if (!fecha) return "Selecciona fecha y hora";
 
-  const date = parseYMDLocal(dia);
-
-  return date.toLocaleDateString("es-MX", {
+  const dateObj = parseYMDLocal(fecha);
+  const texto = dateObj.toLocaleDateString("es-MX", {
     weekday: "long",
     day: "2-digit",
     month: "long",
   });
+  const capitalizado = texto.charAt(0).toUpperCase() + texto.slice(1);
+
+  return hora ? `${capitalizado} · ${hora}` : capitalizado;
 }
 
 function crearEstadoInicialEntrega(fechaEntrega = "") {
@@ -394,11 +425,9 @@ function crearEstadoInicialEntrega(fechaEntrega = "") {
     modelo: "",
     version: "",
     color: "",
-    kilometraje: "",
     fechaEntrega,
     asesorVentas: "",
     comentarios: "",
-    entregaReportada: false,
   };
 }
 
@@ -426,9 +455,8 @@ function crearPayloadEntrega(form) {
     modelo_version: form.modelo,
     version: form.version,
     color: form.color,
-    kilometraje: form.kilometraje ? Number(form.kilometraje) : null,
     fecha_hora_entrega: form.fechaEntrega || null,
-    entrega_reportada: !!form.entregaReportada,
+    entrega_reportada: false,
     asesor_ventas: form.asesorVentas,
     preparada_por: "",
     id_cliente_sf_nadin: "",
@@ -474,10 +502,10 @@ function ViewButton({ active, onClick, icon: Icon, label }) {
       type="button"
       onClick={onClick}
       className={[
-        "inline-flex items-center justify-center gap-2 rounded-md px-3 py-2 text-xs font-black transition",
+        "inline-flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-black transition sm:px-5",
         active
-          ? "bg-[#131E5C] text-white"
-          : "bg-white text-[#131E5C] hover:bg-slate-100",
+          ? "rounded-xl bg-white text-[#0b2257] shadow-lg"
+          : "text-white hover:bg-white/10",
       ].join(" ")}
     >
       <Icon className="h-4 w-4" />
@@ -511,36 +539,34 @@ function StatusBadge({ row, compact = false }) {
   );
 }
 
-function EntregaAgendaCard({ row, compact = false }) {
+function EntregaAgendaCard({ row, compact = false, onClick }) {
   const entregada = entregaFisicaActiva(row?.entrega_reportada);
   const nombreCliente = row?.cliente?.nombre || "Sin nombre";
-  const telefonoCliente = row?.cliente?.telefono || "—";
   const modelo = row?.modelo_version || "Modelo sin capturar";
   const tipoVenta = row?.tipo_venta || "";
-  const version = row?.version ? ` • ${row.version}` : "";
-  const color = row?.color || "";
-  const asesor = row?.asesor_ventas || "Asesor sin capturar";
-  const preparadaPor = row?.preparada_por || "";
+  const futura = row?.fecha_hora_entrega && new Date(row.fecha_hora_entrega).getTime() > Date.now();
+  const estado = entregada ? "Confirmada" : futura ? "Programada" : "Por confirmar";
 
   return (
     <div
+      onClick={() => onClick?.(row)}
+      role="button"
+      tabIndex={0}
       className={[
-        "relative w-full overflow-hidden rounded-lg border text-left shadow-sm transition hover:-translate-y-[1px] hover:shadow-md",
-        compact ? "p-2" : "p-3",
-        entregada
-          ? "border-emerald-300 bg-emerald-50/95"
-          : "border-sky-200 bg-sky-50/95",
+        "relative w-full cursor-pointer overflow-hidden rounded-lg border text-left shadow-sm transition hover:-translate-y-[1px] hover:shadow-md",
+        compact ? "p-1.5" : "p-3",
+        entregada ? "border-emerald-300 bg-emerald-50/95" : futura ? "border-sky-300 bg-sky-50/95" : "border-amber-300 bg-amber-50/95",
       ].join(" ")}
     >
       <span
         className={[
           "absolute bottom-0 left-0 top-0 flex w-2 items-center justify-center",
-          entregada ? "bg-emerald-500" : "bg-slate-200",
+          entregada ? "bg-emerald-500" : futura ? "bg-sky-500" : "bg-amber-500",
         ].join(" ")}
       />
 
       <div className="pl-2">
-        <div className="flex items-start justify-between gap-2">
+        <div className={compact ? "grid gap-1.5" : "flex items-start justify-between gap-2"}>
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 items-center gap-1.5 text-[10px] font-black text-[#131E5C]">
               <CalendarDays className="h-3.5 w-3.5 shrink-0" />
@@ -550,58 +576,32 @@ function EntregaAgendaCard({ row, compact = false }) {
               </span>
             </div>
 
-            <div className="mt-1 line-clamp-2 text-[11px] font-black uppercase leading-tight tracking-wide text-[#131E5C]">
+            <div className={`mt-1 text-[11px] font-black uppercase leading-tight tracking-wide text-[#131E5C] ${compact ? "break-words [overflow-wrap:anywhere]" : "line-clamp-2"}`}>
               {nombreCliente}
             </div>
           </div>
 
-          <StatusBadge row={row} compact />
+          <span className={[
+            "w-fit shrink-0 rounded-full px-1.5 py-0.5 text-[8px] font-black",
+            entregada ? "bg-emerald-100 text-emerald-700" : futura ? "bg-sky-100 text-sky-700" : "bg-amber-100 text-amber-700",
+          ].join(" ")}>{estado}</span>
         </div>
 
-        <div className="mt-2 grid gap-1 text-[10px] font-semibold leading-tight text-slate-600">
+        <div className="mt-1.5 grid gap-1 text-[9px] font-semibold leading-tight text-slate-600">
           <div className="flex min-w-0 items-center gap-1.5">
             <CarFront className="h-3.5 w-3.5 shrink-0 text-[#131E5C]" />
-            <span className="truncate">
+            <span className={compact ? "break-words [overflow-wrap:anywhere]" : "truncate"}>
               {modelo}
-              {version}
             </span>
           </div>
 
           {tipoVenta ? (
             <div className="flex min-w-0 items-center gap-1.5">
               <CarFront className="h-3.5 w-3.5 shrink-0 text-[#131E5C]" />
-              <span className="truncate">Tipo de venta: {tipoVenta}</span>
+              <span className={compact ? "break-words [overflow-wrap:anywhere]" : "truncate"}>Tipo de venta: {tipoVenta}</span>
             </div>
           ) : null}
 
-          {color ? (
-            <div className="flex min-w-0 items-center gap-1.5">
-              <Palette className="h-3.5 w-3.5 shrink-0 text-[#131E5C]" />
-              <span className="truncate">{color}</span>
-            </div>
-          ) : null}
-
-          <div className="flex min-w-0 items-center gap-1.5">
-            <Hash className="h-3.5 w-3.5 shrink-0 text-[#131E5C]" />
-            <span className="truncate">{row.vin || "VIN sin capturar"}</span>
-          </div>
-
-          <div className="flex min-w-0 items-center gap-1.5">
-            <Phone className="h-3.5 w-3.5 shrink-0 text-[#131E5C]" />
-            <span className="truncate">{telefonoCliente}</span>
-          </div>
-
-          <div className="flex min-w-0 items-center gap-1.5">
-            <UserStar className="h-3.5 w-3.5 shrink-0 text-[#131E5C]" />
-            <span className="truncate">{asesor}</span>
-          </div>
-
-          {preparadaPor ? (
-            <div className="flex min-w-0 items-center gap-1.5">
-              <CalendarCheck2 className="h-3.5 w-3.5 shrink-0 text-[#131E5C]" />
-              <span className="truncate">Preparada por: {preparadaPor}</span>
-            </div>
-          ) : null}
         </div>
       </div>
     </div>
@@ -614,6 +614,7 @@ function AgendaMobileList({
   loading,
   currentWeekDate,
   onDisponibleClick,
+  onCardClick,
 }) {
   const weekStart = useMemo(
     () => startOfWeekMonday(currentWeekDate),
@@ -621,7 +622,7 @@ function AgendaMobileList({
   );
 
   const weekDays = useMemo(
-    () => Array.from({ length: 6 }, (_, index) => addDays(weekStart, index)),
+    () => Array.from({ length: 7 }, (_, index) => addDays(weekStart, index)),
     [weekStart]
   );
 
@@ -726,25 +727,14 @@ function AgendaMobileList({
                         {hour}
                       </span>
 
-                      {disponible ? (
-                        <button
-                          type="button"
-                          onClick={() => onDisponibleClick?.({ dayKey, hour })}
-                          className="inline-flex items-center justify-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[11px] font-black text-emerald-700 transition hover:border-emerald-500 hover:bg-emerald-600 hover:text-white"
-                        >
-                          <PlusCircle className="h-3.5 w-3.5" />
-                          Registrar
-                        </button>
-                      ) : null}
                     </div>
 
                     {disponible ? (
                       <button
                         type="button"
                         onClick={() => onDisponibleClick?.({ dayKey, hour })}
-                        className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-emerald-300 bg-emerald-50/70 px-3 py-4 text-xs font-black text-emerald-700 transition hover:border-emerald-500 hover:bg-emerald-600 hover:text-white"
+                        className="flex w-full items-center justify-center rounded-lg border border-dashed border-sky-200 bg-sky-50/50 px-3 py-4 text-xs font-black text-sky-700 transition hover:border-sky-500 hover:bg-sky-100"
                       >
-                        <PlusCircle className="h-4 w-4" />
                         Horario disponible
                       </button>
                     ) : ocupadoOculto ? (
@@ -754,7 +744,7 @@ function AgendaMobileList({
                     ) : (
                       <div className="grid gap-2">
                         {items.map((row) => (
-                          <EntregaAgendaCard key={row.id} row={row} compact />
+                          <EntregaAgendaCard key={row.id} row={row} compact onClick={onCardClick} />
                         ))}
                       </div>
                     )}
@@ -775,17 +765,19 @@ function AgendaWeekView({
   loading,
   currentWeekDate,
   setCurrentWeekDate,
+  selectedDay,
+  setSelectedDay,
+  agendaMode,
+  setAgendaMode,
   onDisponibleClick,
+  onCardClick,
 }) {
   const weekStart = useMemo(
     () => startOfWeekMonday(currentWeekDate),
     [currentWeekDate]
   );
 
-  const weekDays = useMemo(
-    () => Array.from({ length: 6 }, (_, index) => addDays(weekStart, index)),
-    [weekStart]
-  );
+  const weekDays = useMemo(() => Array.from({ length: 7 }, (_, index) => addDays(weekStart, index)), [weekStart]);
 
   const weekEnd = weekDays[weekDays.length - 1];
   const todayIso = toYMDLocal(new Date());
@@ -832,33 +824,41 @@ function AgendaWeekView({
     });
   }, [rows]);
 
-  const gridStyle = useMemo(
-    () => ({
-      gridTemplateColumns: `60px repeat(${HOURS.length}, minmax(0, 1fr))`,
-    }),
-    []
-  );
+  const goPrevWeek = () => {
+    setCurrentWeekDate((prev) => addDays(prev, -7));
+    setSelectedDay((prev) => toYMDLocal(addDays(parseYMDLocal(prev), -7)));
+  };
+  const goNextWeek = () => {
+    setCurrentWeekDate((prev) => addDays(prev, 7));
+    setSelectedDay((prev) => toYMDLocal(addDays(parseYMDLocal(prev), 7)));
+  };
+  const displayedDays = agendaMode === "day"
+    ? weekDays.filter((day) => toYMDLocal(day) === selectedDay)
+    : weekDays;
+  const safeDays = displayedDays.length ? displayedDays : weekDays;
+  const gridStyle = { gridTemplateColumns: `76px repeat(${HOURS.length}, minmax(96px, 1fr))` };
+  const currentHour = `${String(new Date().getHours()).padStart(2, "0")}:00`;
+  const currentHourIndex = HOURS.indexOf(currentHour);
+  const currentHourLinePosition = currentHourIndex >= 0
+    ? {
+        left: `calc(${((currentHourIndex + 0.5) / HOURS.length) * 100}% + ${76 * (1 - ((currentHourIndex + 0.5) / HOURS.length))}px)`,
+      }
+    : null;
 
-  const goPrevWeek = () => setCurrentWeekDate((prev) => addDays(prev, -7));
-  const goNextWeek = () => setCurrentWeekDate((prev) => addDays(prev, 7));
-  const goToday = () => setCurrentWeekDate(new Date());
+  const handleNuevaEntrega = () => {
+    const dayKey = selectedDay || toYMDLocal(weekStart);
+    const freeHour = HOURS.find((hour) => !(availabilityRowsBySlot.get(`${dayKey}|${hour}`) || []).length) || HOURS[0];
+    onDisponibleClick?.({ dayKey, hour: freeHour });
+  };
 
   return (
     <div className="hidden lg:block">
-      <div className="mb-3 flex flex-col gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm xl:flex-row xl:items-center xl:justify-between">
-        <div className="min-w-0">
-          <div className="text-xs font-semibold text-slate-500">Semana</div>
-
-          <div className="truncate text-sm font-black text-[#131E5C]">
-            {formatWeekTitle(weekStart, weekEnd)}
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
+      <div className="flex items-center justify-between gap-2 border-b border-slate-200 bg-white px-3 py-2">
+        <div className="flex min-w-0 items-center gap-2">
           <button
             type="button"
             onClick={goPrevWeek}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-[#131E5C] hover:bg-slate-50"
+            className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-[#131E5C] hover:bg-slate-100"
             aria-label="Semana anterior"
           >
             <ChevronLeft className="h-4 w-4" />
@@ -866,96 +866,69 @@ function AgendaWeekView({
 
           <button
             type="button"
-            onClick={goToday}
-            className="inline-flex items-center justify-center gap-2 rounded-lg border border-[#131E5C] bg-white px-3 py-2 text-xs font-black text-[#131E5C] hover:bg-[#131E5C] hover:text-white"
-          >
-            Semana
-          </button>
-
-          <button
-            type="button"
             onClick={goNextWeek}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-[#131E5C] hover:bg-slate-50"
+            className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-[#131E5C] hover:bg-slate-100"
             aria-label="Semana siguiente"
           >
             <ChevronRight className="h-4 w-4" />
           </button>
+          <div className="truncate text-sm font-black text-[#131E5C]">Semana del {formatWeekTitle(weekStart, weekEnd)}</div>
+        </div>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <div className="inline-flex rounded-lg bg-slate-100 p-0.5">
+            <button type="button" onClick={() => setAgendaMode("week")} className={`rounded-md px-3 py-1.5 text-[10px] font-black ${agendaMode === "week" ? "bg-[#131E5C] text-white" : "text-slate-600"}`}>Semana</button>
+            <button type="button" onClick={() => setAgendaMode("day")} className={`rounded-md px-3 py-1.5 text-[10px] font-black ${agendaMode === "day" ? "bg-white text-[#131E5C] shadow-sm" : "text-slate-600"}`}>Día</button>
+          </div>
+          <button type="button" onClick={handleNuevaEntrega} className="inline-flex items-center gap-1.5 rounded-lg bg-[#0756a3] px-3 py-2 text-[10px] font-black text-white hover:bg-[#064780]"><PlusCircle className="h-3.5 w-3.5" />Nueva entrega</button>
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-        <div className="grid w-full" style={gridStyle}>
-          <div className="border-b border-r border-slate-200 bg-slate-50 px-3 py-3 text-xs font-black uppercase tracking-wide text-slate-500">
-            Día / Hora
+      <div className="calendar-scroll overflow-auto bg-white">
+        <div className="relative grid min-w-[940px] w-full" style={gridStyle}>
+          {currentHourLinePosition ? (
+            <div className="pointer-events-none absolute bottom-0 top-[37px] z-10 border-l border-dashed border-sky-500" style={currentHourLinePosition}>
+              <span className="absolute -left-1 top-0 h-2 w-2 rounded-full bg-sky-500" />
+            </div>
+          ) : null}
+          <div className="sticky left-0 z-30 border-b border-r border-slate-200 bg-slate-50 px-2 py-3 text-[10px] font-black text-slate-500">
+            Día
           </div>
 
           {HOURS.map((hour) => (
             <div
               key={hour}
-              className="border-b border-l border-slate-200 bg-slate-50 px-2 py-3 text-center"
+              className="border-b border-r border-slate-200 bg-slate-50 px-2 py-3 text-center text-[10px] font-black text-[#131E5C]"
             >
-              <span className="inline-flex rounded-lg bg-[#131E5C]/10 px-2.5 py-1 text-[12px] font-black text-[#131E5C]">
-                {hour}
-              </span>
+              {hour}
             </div>
           ))}
 
           {loading ? (
             <>
-              {weekDays.map((day) => {
+              {safeDays.map((day) => {
                 const dayKey = toYMDLocal(day);
-
                 return (
                   <div key={`loader-${dayKey}`} className="contents">
-                    <div className="border-b border-r border-dashed border-slate-200 bg-white px-3 py-4">
-                      <Skeleton className="h-4 w-20" />
-                      <Skeleton className="mt-2 h-3 w-14" />
-                    </div>
-
-                    {HOURS.map((hour) => (
-                      <div
-                        key={`${dayKey}-${hour}`}
-                        className="min-h-[130px] border-b border-l border-dashed border-slate-200 p-1.5"
-                      >
-                        <Skeleton className="h-28 w-full rounded-lg" />
-                      </div>
-                    ))}
+                    <div className="sticky left-0 z-20 border-b border-r border-slate-200 bg-white p-2"><Skeleton className="h-3 w-12" /></div>
+                    {HOURS.map((hour) => <div key={`${dayKey}-${hour}`} className="min-h-[72px] border-b border-r border-slate-200 p-1"><Skeleton className="h-14 w-full" /></div>)}
                   </div>
                 );
               })}
             </>
           ) : (
-            weekDays.map((day) => {
+            safeDays.map((day) => {
               const dayKey = toYMDLocal(day);
               const isToday = dayKey === todayIso;
-
+              const count = rows.filter((row) => toYMDLocal(row.fecha_hora_entrega) === dayKey).length;
               return (
                 <div key={dayKey} className="contents">
                   <div
-                    className={[
-                      "border-b border-r border-dashed border-slate-200 px-3 py-4"
-                    ].join(" ")}
+                    onClick={() => setSelectedDay(dayKey)}
+                    className={`sticky left-0 z-20 cursor-pointer border-b border-r border-slate-200 px-2 py-2 text-center ${isToday ? "bg-sky-50 text-[#0756a3]" : selectedDay === dayKey ? "bg-slate-100" : "bg-white text-[#131E5C]"}`}
                   >
-
-                    <div
-                      className={[
-                        "mt-1 text-[11px] font-bold capitalize",
-                        isToday ? "text-blue-500" : "text-black-500",
-                      ].join(" ")}
-                    >
-                      {day.toLocaleDateString("es-MX", {
-                        weekday: "long",
-                      })}
-                    </div>
-
-                    <div className="mt-1 text-sm font-black">
-                      {day.toLocaleDateString("es-MX", {
-                        day: "2-digit",
-                        month: "2-digit",
-                      })}
-                    </div>
+                    <div className="text-[10px] font-black">{weekdayShortEs(day)} {day.getDate()}</div>
+                    <span className="mt-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-slate-200 px-1 text-[8px] text-slate-600">{count}</span>
                   </div>
-
                   {HOURS.map((hour) => {
                     const slotKey = `${dayKey}|${hour}`;
                     const items = rowsBySlot.get(slotKey) || [];
@@ -968,32 +941,31 @@ function AgendaWeekView({
                     return (
                       <div
                         key={slotKey}
-                        className="relative min-h-[130px] border-b border-l border-dashed border-slate-200 bg-white/80 p-1.5 transition hover:bg-slate-50"
+                        onClick={() => setSelectedDay(dayKey)}
+                        className={`relative min-h-[68px] border-b border-r border-slate-200 p-1 transition ${dayKey === todayIso ? "bg-sky-50/40" : "bg-white"}`}
                       >
                         {disponible ? (
                           <button
                             type="button"
                             onClick={() => onDisponibleClick?.({ dayKey, hour })}
-                            className="flex h-full min-h-[116px] w-full flex-col items-center justify-center gap-2 rounded-lg px-2 text-center text-[11px] font-black text-[#131E5C] transition hover:-translate-y-[2px] hover:shadow-md"
-                          >
-                            <PlusCircle className="h-5 w-5" />
-                          </button>
+                            aria-label={`Agregar entrega el ${dayKey} a las ${hour}`}
+                            className="h-full min-h-[60px] w-full rounded-md transition hover:bg-sky-50"
+                          />
                         ) : ocupadoOculto ? (
-                          <div className="flex h-full min-h-[116px] items-center justify-center rounded-lg border border-amber-200 bg-amber-50 px-2 text-center text-[10px] font-black leading-tight text-amber-700">
-                            Ocupado por un registro oculto por filtros
-                          </div>
+                          <div className="flex min-h-[60px] items-center justify-center rounded-md bg-slate-50 px-1 text-center text-[8px] font-bold text-slate-400">Ocupado</div>
                         ) : (
-                          <div className="grid gap-1.5">
+                          <div className="relative z-20 grid gap-1">
                             {visibleItems.map((row) => (
                               <EntregaAgendaCard
                                 key={row.id}
                                 row={row}
                                 compact
+                                onClick={onCardClick}
                               />
                             ))}
 
                             {hiddenCount > 0 ? (
-                              <div className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-center text-[10px] font-black text-[#131E5C]">
+                              <div className="rounded bg-slate-100 px-1 py-0.5 text-center text-[8px] font-black text-[#131E5C]">
                                 +{hiddenCount} entrega
                                 {hiddenCount === 1 ? "" : "s"}
                               </div>
@@ -1018,7 +990,7 @@ function AgendaWeekView({
 
           <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
             {outOfScheduleRows.map((row) => (
-              <EntregaAgendaCard key={row.id} row={row} compact />
+              <EntregaAgendaCard key={row.id} row={row} compact onClick={onCardClick} />
             ))}
           </div>
         </div>
@@ -1052,7 +1024,7 @@ function LabelModal({ icon, text, required = false }) {
   );
 }
 
-function ModalRegistroEntrega({ abierto, fechaEntregaInicial, entregasOcupadas = [], onClose, onGuardado }) {
+function ModalRegistroEntrega({ abierto, fechaEntregaInicial, entregasExistentes = [], onClose, onGuardado }) {
   const [form, setForm] = useState(() =>
     crearEstadoInicialEntrega(fechaEntregaInicial)
   );
@@ -1068,29 +1040,22 @@ function ModalRegistroEntrega({ abierto, fechaEntregaInicial, entregasOcupadas =
     setErrorGeneral("");
   }, [abierto, fechaEntregaInicial]);
 
-  const { dia: diaSeleccionado, hora: horaSeleccionada } = splitFechaHora(
-    form.fechaEntrega
-  );
-
-  // Horas ya ocupadas para el día seleccionado (para bloquear el chip de hora)
   const horasOcupadas = useMemo(() => {
-    if (!diaSeleccionado) return new Set();
+    const { fecha } = partirFechaHora(form.fechaEntrega);
+    if (!fecha || !form.dealer) return new Set();
 
     const set = new Set();
-
-    for (const row of entregasOcupadas) {
+    for (const row of entregasExistentes) {
       if (!row.fecha_hora_entrega) continue;
+      if (normalizeKey(row.agencia) !== normalizeKey(form.dealer)) continue;
+      if (toYMDLocal(row.fecha_hora_entrega) !== fecha) continue;
 
-      if (toYMDLocal(row.fecha_hora_entrega) === diaSeleccionado) {
-        set.add(getHourKey(row.fecha_hora_entrega));
-      }
+      set.add(getHourKey(row.fecha_hora_entrega));
     }
-
     return set;
-  }, [entregasOcupadas, diaSeleccionado]);
+  }, [entregasExistentes, form.dealer, form.fechaEntrega]);
 
   if (!abierto) return null;
-
 
   const deshabilitado = guardando;
 
@@ -1121,13 +1086,17 @@ function ModalRegistroEntrega({ abierto, fechaEntregaInicial, entregasOcupadas =
     if (!form.color) nuevosErrores.color = "Selecciona un color.";
     if (!form.fechaEntrega) {
       nuevosErrores.fechaEntrega = "Selecciona fecha y hora de entrega.";
-    } else if (!horaSeleccionada) {
-      nuevosErrores.fechaEntrega = "Selecciona una hora disponible.";
-    } else if (horasOcupadas.has(horaSeleccionada)) {
-      nuevosErrores.fechaEntrega = "Ese horario ya está ocupado, elige otro.";
     }
     if (!form.asesorVentas.trim()) {
       nuevosErrores.asesorVentas = "Selecciona el asesor de ventas.";
+    }
+
+    if (
+      !nuevosErrores.dealer &&
+      !nuevosErrores.fechaEntrega &&
+      existeConflictoHorario(entregasExistentes, form.dealer, form.fechaEntrega)
+    ) {
+      nuevosErrores.fechaEntrega = "Ese horario ya está ocupado para este dealer. Elige otro.";
     }
 
     setErrores(nuevosErrores);
@@ -1191,9 +1160,9 @@ function ModalRegistroEntrega({ abierto, fechaEntregaInicial, entregasOcupadas =
     errores.asesorVentas;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-3 backdrop-blur-sm">
-      <div className="max-h-[92vh] w-full max-w-5xl overflow-hidden rounded-2xl bg-white shadow-2xl">
-        <div className="flex items-start justify-between gap-4 bg-[#131E5C] px-5 py-4 text-white">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-2 backdrop-blur-sm sm:p-3">
+      <div className="flex h-[calc(100dvh-1rem)] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl sm:h-auto sm:max-h-[92dvh]">
+        <div className="flex shrink-0 items-start justify-between gap-4 bg-[#131E5C] px-4 py-4 text-white sm:px-5">
           <div className="min-w-0">
             <div className="text-[11px] font-black uppercase tracking-[0.2em] text-white/70">
               Nuevo registro
@@ -1201,10 +1170,8 @@ function ModalRegistroEntrega({ abierto, fechaEntregaInicial, entregasOcupadas =
             <h2 className="mt-1 text-xl font-black sm:text-2xl">
               Programar entrega
             </h2>
-            <p className="mt-1 text-xs font-semibold capitalize text-white/75">
-              {diaSeleccionado && horaSeleccionada
-                ? `${formatFechaBonita(diaSeleccionado)} · ${horaSeleccionada}`
-                : "Selecciona fecha y hora"}
+            <p className="mt-1 text-xs font-semibold text-white/75">
+              {formatEncabezadoFecha(form.fechaEntrega)}
             </p>
           </div>
 
@@ -1364,78 +1331,52 @@ function ModalRegistroEntrega({ abierto, fechaEntregaInicial, entregasOcupadas =
               </select>
             </CampoModal>
 
-            <CampoModal error={errores.kilometraje}>
-              <LabelModal icon={<Gauge size={14} />} text="Kilometraje" />
-              <input
-                type="number"
-                inputMode="numeric"
-                placeholder="Ej. 15"
-                min={0}
-                step={1}
-                value={form.kilometraje}
-                disabled={deshabilitado}
-                onChange={(e) => setCampo("kilometraje", e.target.value)}
-                className={`${inputModalBase} ${errores.kilometraje ? "border-red-500" : "border-slate-300"}`}
-              />
-            </CampoModal>
-
             <div className="md:col-span-2 xl:col-span-3">
               <CampoModal error={errores.fechaEntrega}>
                 <LabelModal icon={<Calendar size={14} />} text="Fecha y hora" required />
 
-                <div className="grid gap-3 rounded-xl border border-slate-300 bg-slate-50 p-3">
+                <div className="rounded-xl border border-slate-300 bg-white p-3">
                   <input
                     type="date"
-                    value={diaSeleccionado}
+                    value={partirFechaHora(form.fechaEntrega).fecha}
                     disabled={deshabilitado}
                     onChange={(e) => {
-                      const nuevoDia = e.target.value;
-
-                      setCampo(
-                        "fechaEntrega",
-                        nuevoDia ? `${nuevoDia}T${horaSeleccionada || ""}` : ""
-                      );
+                      const hora = partirFechaHora(form.fechaEntrega).hora;
+                      setCampo("fechaEntrega", combinarFechaHora(e.target.value, hora));
                     }}
                     className={`${inputModalBase} ${errores.fechaEntrega ? "border-red-500" : "border-slate-300"}`}
                   />
 
-                  <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-5">
+                  <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-5">
                     {HOURS.map((hour) => {
-                      const ocupado = horasOcupadas.has(hour);
-                      const seleccionado = horaSeleccionada === hour;
+                      const activa = partirFechaHora(form.fechaEntrega).hora === hour;
+                      const ocupada = horasOcupadas.has(hour) && !activa;
 
                       return (
                         <button
                           key={hour}
                           type="button"
-                          disabled={deshabilitado || !diaSeleccionado || ocupado}
-                          onClick={() =>
-                            setCampo("fechaEntrega", `${diaSeleccionado}T${hour}`)
-                          }
-                          title={ocupado ? "Horario ocupado" : hour}
+                          disabled={deshabilitado || ocupada}
+                          onClick={() => {
+                            const fecha = partirFechaHora(form.fechaEntrega).fecha;
+                            if (!fecha) return;
+                            setCampo("fechaEntrega", combinarFechaHora(fecha, hour));
+                          }}
                           className={[
-                            "flex flex-col items-center justify-center gap-0.5 rounded-lg border px-2 py-2 text-xs font-black transition disabled:cursor-not-allowed",
-                            ocupado
-                              ? "border-red-200 bg-red-50 text-red-400 line-through"
-                              : seleccionado
-                                ? "border-[#131E5C] bg-[#131E5C] text-white shadow-sm"
-                                : "border-slate-200 bg-white text-[#131E5C] hover:border-[#131E5C]/50 hover:bg-[#131E5C]/5",
+                            "rounded-xl px-3 py-2.5 text-sm font-black transition disabled:cursor-not-allowed",
+                            activa
+                              ? "bg-[#131E5C] text-white shadow-sm"
+                              : ocupada
+                                ? "bg-red-50 text-red-300 line-through"
+                                : "bg-slate-100 text-[#131E5C] hover:bg-[#131E5C]/10",
                           ].join(" ")}
+                          title={ocupada ? "Horario ocupado" : hour}
                         >
                           {hour}
-                          {ocupado ? (
-                            <span className="text-[9px] font-bold normal-case">Ocupado</span>
-                          ) : null}
                         </button>
                       );
                     })}
                   </div>
-
-                  {!diaSeleccionado ? (
-                    <span className="text-[11px] font-semibold text-slate-400">
-                      Selecciona primero un día para ver horarios disponibles.
-                    </span>
-                  ) : null}
                 </div>
               </CampoModal>
             </div>
@@ -1459,41 +1400,27 @@ function ModalRegistroEntrega({ abierto, fechaEntregaInicial, entregasOcupadas =
 
             <CampoModal>
               <LabelModal icon={<UserCheck size={14} />} text="Entrega física" />
-              <button
-                type="button"
-                disabled={deshabilitado}
-                onClick={() => setCampo("entregaReportada", !form.entregaReportada)}
-                className={[
-                  "inline-flex h-[42px] w-full items-center justify-center gap-2 rounded-xl border px-3 text-sm font-black transition disabled:opacity-60",
-                  form.entregaReportada
-                    ? "border-emerald-300 bg-emerald-100 text-emerald-800 hover:bg-emerald-200"
-                    : "border-amber-300 bg-amber-100 text-amber-800 hover:bg-amber-200",
-                ].join(" ")}
-              >
-                {form.entregaReportada ? (
-                  <CheckCircle2 className="h-4 w-4" />
-                ) : (
-                  <Clock3 className="h-4 w-4" />
-                )}
-                {form.entregaReportada ? "Entrega física realizada" : "Entrega física pendiente"}
-              </button>
+              <div className="flex min-h-[42px] items-center justify-center gap-2 rounded-xl border border-amber-300 bg-amber-100 px-3 py-2 text-sm font-black text-amber-800">
+                <Clock3 className="h-4 w-4" />
+                Entrega física pendiente
+              </div>
             </CampoModal>
 
             <div>
               <LabelModal icon={<MessageSquare size={14} />} text="Comentarios" />
               <textarea
                 placeholder="Notas internas..."
-                rows={1}
+                rows={4}
                 value={form.comentarios}
                 disabled={deshabilitado}
                 onChange={(e) => setCampo("comentarios", e.target.value)}
-                className="mt-1.5 h-[42px] w-full resize-none rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-[#131E5C] outline-none transition placeholder:text-slate-400 focus:border-[#131E5C] focus:ring-2 focus:ring-[#131E5C]/15 disabled:opacity-60"
+                className="mt-1.5 w-full resize-none rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-[#131E5C] outline-none transition placeholder:text-slate-400 focus:border-[#131E5C] focus:ring-2 focus:ring-[#131E5C]/15 disabled:opacity-60"
               />
             </div>
           </div>
         </div>
 
-        <div className="sticky bottom-0 flex flex-col-reverse gap-2 border-t border-slate-200 bg-slate-50 px-4 py-3 sm:flex-row sm:justify-end">
+        <div className="flex flex-col gap-2 border-t border-slate-200 bg-slate-50 px-4 py-3 sm:flex-row sm:justify-end">
           <button
             type="button"
             onClick={limpiarFormulario}
@@ -1515,7 +1442,96 @@ function ModalRegistroEntrega({ abierto, fechaEntregaInicial, entregasOcupadas =
             ) : (
               <ClipboardCheck className="h-4 w-4" />
             )}
-            <span className="whitespace-nowrap">Registrar y generar PDF</span>
+            Registrar y generar PDF
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ModalDetalleEntrega({ entrega, onClose, onActualizado }) {
+  const [guardando, setGuardando] = useState(false);
+  const [error, setError] = useState("");
+
+  if (!entrega) return null;
+
+  const entregada = entregaFisicaActiva(entrega.entrega_reportada);
+
+  const toggleEstado = async () => {
+    try {
+      setGuardando(true);
+      setError("");
+
+      const actualizado = await apiEntregas.patch(entrega.id, {
+        entrega_reportada: !entregada,
+      });
+
+      await onActualizado?.(actualizado);
+    } catch (err) {
+      setError(err?.message || "No se pudo actualizar el estado de entrega.");
+    } finally {
+      setGuardando(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-3 backdrop-blur-sm">
+      <div className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl">
+        <div className="flex items-start justify-between gap-4 bg-[#131E5C] px-5 py-4 text-white">
+          <div className="min-w-0">
+            <div className="text-[11px] font-black uppercase tracking-[0.2em] text-white/70">
+              Detalle de entrega
+            </div>
+            <h2 className="mt-1 truncate text-lg font-black">
+              {entrega?.cliente?.nombre || "Sin nombre"}
+            </h2>
+          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-xl bg-white/10 p-2 text-white transition hover:bg-white/20"
+            aria-label="Cerrar modal"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="p-5">
+          {error ? (
+            <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">
+              ⚠ {error}
+            </div>
+          ) : null}
+
+          <div className="grid gap-2 text-sm font-semibold text-[#131E5C]">
+            <div>Fecha y hora: {formatDateTime(entrega.fecha_hora_entrega)}</div>
+            <div>Teléfono: {entrega?.cliente?.telefono || "—"}</div>
+            <div>VIN: {entrega.vin || "—"}</div>
+            <div>Modelo: {entrega.modelo_version || "—"} {entrega.version || ""}</div>
+            <div>Asesor: {entrega.asesor_ventas || "—"}</div>
+          </div>
+
+          <button
+            type="button"
+            onClick={toggleEstado}
+            disabled={guardando}
+            className={[
+              "mt-5 flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-black transition disabled:opacity-60",
+              entregada
+                ? "border border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100"
+                : "border border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100",
+            ].join(" ")}
+          >
+            {guardando ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : entregada ? (
+              <Clock3 className="h-4 w-4" />
+            ) : (
+              <CheckCircle2 className="h-4 w-4" />
+            )}
+            {entregada ? "Marcar como pendiente" : "Marcar como entregada"}
           </button>
         </div>
       </div>
@@ -1560,6 +1576,113 @@ function KpiCard({ label, value, color, bg, detail }) {
         <div className="mt-2 text-xs font-bold text-blue-500">{detail}</div>
       ) : null}
     </div>
+  );
+}
+
+function AgendaKpis({ stats }) {
+  const percent = (value) => stats.total ? Math.round((value / stats.total) * 100) : 0;
+  const cards = [
+    { label: "Programadas", value: stats.total, pct: 100, icon: CalendarDays, tone: "navy" },
+    { label: "Realizadas", value: stats.entregadas, pct: percent(stats.entregadas), icon: CheckCircle2, tone: "green" },
+    { label: "Pendientes", value: stats.pendientes, pct: percent(stats.pendientes), icon: Clock3, tone: "amber" },
+    { label: "Por confirmar", value: stats.proximas, pct: percent(stats.proximas), icon: CircleHelp, tone: "sky" },
+  ];
+  const tones = {
+    navy: { border: "border-blue-300", bg: "from-white to-blue-50", icon: "from-[#173e9a] to-[#071f70]", bar: "bg-blue-700", pill: "bg-blue-100 text-blue-800" },
+    green: { border: "border-emerald-300", bg: "from-white to-emerald-50", icon: "from-emerald-400 to-emerald-700", bar: "bg-emerald-600", pill: "bg-emerald-100 text-emerald-700" },
+    amber: { border: "border-amber-300", bg: "from-white to-amber-50", icon: "from-amber-300 to-amber-600", bar: "bg-amber-500", pill: "bg-amber-100 text-amber-700" },
+    sky: { border: "border-sky-300", bg: "from-white to-sky-50", icon: "from-sky-400 to-sky-600", bar: "bg-sky-500", pill: "bg-sky-100 text-sky-700" },
+  };
+
+  return (
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      {cards.map((card) => {
+        const Icon = card.icon;
+        const tone = tones[card.tone];
+        return (
+          <div key={card.label} className={`group relative min-h-[124px] overflow-hidden rounded-[14px] border bg-gradient-to-br p-4 shadow-[0_8px_20px_rgba(15,38,86,0.13)] transition hover:-translate-y-0.5 hover:shadow-lg ${tone.border} ${tone.bg}`}>
+            <Icon className={`pointer-events-none absolute -bottom-5 right-2 h-24 w-24 opacity-[0.08] ${card.tone === "green" ? "text-emerald-500" : card.tone === "amber" ? "text-amber-500" : card.tone === "sky" ? "text-sky-500" : "text-blue-700"}`} strokeWidth={2.5} />
+            <div className="relative flex items-center gap-2.5">
+              <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br text-white shadow-sm ${tone.icon}`}><Icon className="h-5 w-5" strokeWidth={2.5} /></div>
+              <span className="min-w-0 flex-1 truncate text-[11px] font-black uppercase tracking-wide text-[#131E5C]">{card.label}</span>
+              <span className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-black ${tone.pill}`}>{card.pct}%</span>
+            </div>
+            <div className="relative mt-2.5 flex items-end gap-2">
+              <span className="text-[32px] font-black leading-none tracking-tight text-[#10225f]">{card.value}</span>
+              <span className="pb-0.5 text-xs font-bold text-slate-500">entregas</span>
+            </div>
+            <div className="relative mt-3.5 h-1.5 overflow-hidden rounded-full bg-slate-200/80">
+              <div className={`h-full rounded-full transition-all duration-500 ${tone.bar}`} style={{ width: `${card.pct}%` }} />
+              </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function DayDeliveriesPanel({ date, rows, onCardClick, collapsed = false, onToggle }) {
+  const sortedRows = [...rows].sort((a, b) => new Date(a.fecha_hora_entrega) - new Date(b.fecha_hora_entrega));
+  const confirmed = rows.filter((row) => entregaFisicaActiva(row.entrega_reportada)).length;
+  const pending = rows.length - confirmed;
+  const dateObj = parseYMDLocal(date);
+
+  if (collapsed) {
+    return (
+      <aside className="hidden overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm xl:flex xl:flex-col xl:items-center">
+        <button type="button" onClick={onToggle} className="flex h-full min-h-[520px] w-full flex-col items-center gap-3 py-3 text-[#131E5C] transition hover:bg-slate-50" aria-label="Desplegar entregas del día" title="Desplegar entregas del día">
+          <ChevronLeft className="h-4 w-4" />
+          <CalendarDays className="h-4 w-4" />
+          <span className="text-[9px] font-black [writing-mode:vertical-rl]">Entregas del día</span>
+          <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-[#131E5C] px-1 text-[9px] font-black text-white">{rows.length}</span>
+        </button>
+      </aside>
+    );
+  }
+
+  return (
+    <aside className="hidden min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm xl:flex xl:flex-col">
+      <div className="flex items-start justify-between border-b border-slate-200 px-3 py-3">
+        <div>
+          <div className="flex items-center gap-2 text-sm font-black text-[#131E5C]"><CalendarDays className="h-4 w-4" />Entregas del día</div>
+          <div className="mt-1 text-[10px] font-semibold capitalize text-slate-500">{dateObj.toLocaleDateString("es-MX", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</div>
+        </div>
+        <button type="button" onClick={onToggle} className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-[#131E5C]" aria-label="Contraer entregas del día" title="Contraer panel">
+          <ChevronRight className="h-4 w-4" />
+        </button>
+      </div>
+      <div className="grid grid-cols-2 gap-2 p-3">
+        <div className="rounded-lg bg-emerald-50 p-2 text-emerald-700"><div className="text-lg font-black">{confirmed}</div><div className="text-[9px] font-bold">Confirmadas</div></div>
+        <div className="rounded-lg bg-amber-50 p-2 text-amber-700"><div className="text-lg font-black">{pending}</div><div className="text-[9px] font-bold">Sin confirmar</div></div>
+      </div>
+      <div className="max-h-[620px] flex-1 space-y-2 overflow-y-auto px-3 pb-3">
+        {sortedRows.map((row) => {
+          const done = entregaFisicaActiva(row.entrega_reportada);
+          return (
+            <button key={row.id} type="button" onClick={() => onCardClick(row)} className={`group relative w-full overflow-hidden rounded-lg border bg-white p-2.5 pl-3 text-left shadow-sm transition hover:-translate-y-px hover:border-sky-300 hover:shadow-md ${done ? "border-emerald-200" : "border-amber-200"}`}>
+              <span className={`absolute inset-y-0 left-0 w-1 ${done ? "bg-emerald-500" : "bg-amber-400"}`} />
+              <div className="flex items-start gap-2">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="inline-flex items-center gap-1 text-[9px] font-black text-[#131E5C]"><CarFront className="h-3 w-3" />{formatCardTime(row.fecha_hora_entrega)}</span>
+                    <span className={`rounded-full px-2 py-0.5 text-[8px] font-black ${done ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>{done ? "Confirmada" : "Por confirmar"}</span>
+                  </div>
+                  <div className="mt-1 truncate text-[10px] font-black uppercase text-[#131E5C]">{row?.cliente?.nombre || "Sin nombre"}</div>
+                  <div className="mt-1.5 grid gap-1 text-[9px] font-semibold text-slate-500">
+                    <span className="flex min-w-0 items-center gap-1.5"><Car className="h-3 w-3 shrink-0 text-[#131E5C]" /><span className="truncate">{row.modelo_version || "Sin modelo"}{row.version ? ` · ${row.version}` : ""}</span></span>
+                    <span className="flex min-w-0 items-center gap-1.5"><ClipboardList className="h-3 w-3 shrink-0 text-[#131E5C]" /><span className="truncate">{row.tipo_venta || "Sin tipo de venta"}</span></span>
+                    <span className="flex min-w-0 items-center gap-1.5"><UserStar className="h-3 w-3 shrink-0 text-[#131E5C]" /><span className="truncate">{row.asesor_ventas || "Sin asesor"}</span></span>
+                  </div>
+                </div>
+                <ChevronRight className="mt-6 h-3.5 w-3.5 shrink-0 text-slate-400 transition group-hover:translate-x-0.5 group-hover:text-[#131E5C]" />
+              </div>
+            </button>
+          );
+        })}
+        {!sortedRows.length ? <div className="py-8 text-center text-xs font-semibold text-slate-400">No hay entregas este día.</div> : null}
+      </div>
+      <button type="button" className="m-3 mt-0 rounded-lg border border-slate-200 px-3 py-2 text-[10px] font-black text-[#0756a3] hover:bg-slate-50">Ver todas las entregas del día →</button>
+    </aside>
   );
 }
 
@@ -2087,23 +2210,39 @@ export default function App() {
   const [ctxError, setCtxError] = useState("");
   const [viewMode, setViewMode] = useState("agenda");
   const [currentWeekDate, setCurrentWeekDate] = useState(new Date());
+  const [selectedDay, setSelectedDay] = useState(toYMDLocal(new Date()));
+  const [agendaMode, setAgendaMode] = useState("week");
+  const [dayPanelOpen, setDayPanelOpen] = useState(true);
   const [sort, setSort] = useState({
     key: "fecha_hora_entrega",
     dir: "desc",
   });
 
- const [filters, setFilters] = useState({
-  q: "",
-  rangoDesde: "",
-  rangoHasta: "",
-  tipoVenta: "",
-});
+  const [filters, setFilters] = useState({
+    q: "",
+    rangoDesde: "",
+    rangoHasta: "",
+    asesor: "",
+    tipoVenta: "",
+    modelo: "",
+    estado: "",
+  });
 
   const [loadingList, setLoadingList] = useState(false);
   const [modalRegistro, setModalRegistro] = useState({
     abierto: false,
     fechaEntrega: "",
   });
+
+  const [modalDetalle, setModalDetalle] = useState(null);
+
+  const abrirModalDetalle = (row) => setModalDetalle(row);
+  const cerrarModalDetalle = () => setModalDetalle(null);
+
+  const handleEntregaActualizada = async () => {
+    await refreshList();
+    cerrarModalDetalle();
+  };
 
   function toggleSort(key) {
     setSort((prev) => {
@@ -2164,6 +2303,7 @@ export default function App() {
   const handleEntregaGuardada = async (guardado) => {
     if (guardado?.fecha_hora_entrega) {
       setCurrentWeekDate(new Date(guardado.fecha_hora_entrega));
+      setSelectedDay(toYMDLocal(guardado.fecha_hora_entrega));
     }
 
     await refreshList();
@@ -2198,6 +2338,14 @@ export default function App() {
         normalizeStr(item.id_cliente_sf_dms).toLowerCase().includes(q) ||
         normalizeStr(item.comentarios).toLowerCase().includes(q);
 
+      const matchAsesor = !filters.asesor || item.asesor_ventas === filters.asesor;
+      const matchTipo = !filters.tipoVenta || item.tipo_venta === filters.tipoVenta;
+      const matchModelo = !filters.modelo || item.modelo_version === filters.modelo;
+      const realizada = entregaFisicaActiva(item.entrega_reportada);
+      const futura = item.fecha_hora_entrega && new Date(item.fecha_hora_entrega).getTime() > Date.now();
+      const estadoActual = realizada ? "confirmada" : futura ? "programada" : "por-confirmar";
+      const matchEstado = !filters.estado || filters.estado === estadoActual;
+
       let matchRango = true;
 
       if (desdeInt !== null || hastaInt !== null) {
@@ -2212,18 +2360,7 @@ export default function App() {
         if (hastaInt !== null && ymdInt > hastaInt) matchRango = false;
       }
 
-      let matchTipoVenta = true;
-
-      if (filters.tipoVenta) {
-        if (filters.tipoVenta === "Sin capturar") {
-          matchTipoVenta = !normalizeStr(item.tipo_venta);
-        } else {
-          matchTipoVenta =
-            normalizeKey(item.tipo_venta) === normalizeKey(filters.tipoVenta);
-        }
-      }
-
-      return matchQ && matchRango && matchTipoVenta;
+      return matchQ && matchRango && matchAsesor && matchTipo && matchModelo && matchEstado;
     });
   }, [dealerRows, filters]);
 
@@ -2269,7 +2406,7 @@ export default function App() {
 
   const agendaRows = useMemo(() => {
     const weekStart = startOfWeekMonday(currentWeekDate);
-    const weekEnd = addDays(weekStart, 5);
+    const weekEnd = addDays(weekStart, 6);
     const minInt = ymdToInt(toYMDLocal(weekStart));
     const maxInt = ymdToInt(toYMDLocal(weekEnd));
 
@@ -2298,7 +2435,7 @@ export default function App() {
 
   const agendaAvailabilityRows = useMemo(() => {
     const weekStart = startOfWeekMonday(currentWeekDate);
-    const weekEnd = addDays(weekStart, 5);
+    const weekEnd = addDays(weekStart, 6);
     const minInt = ymdToInt(toYMDLocal(weekStart));
     const maxInt = ymdToInt(toYMDLocal(weekEnd));
 
@@ -2431,12 +2568,8 @@ export default function App() {
       a.hora.localeCompare(b.hora)
     );
 
-    const entregasFisicasRealizadas = sorted.filter((row) =>
-      entregaFisicaActiva(row.entrega_reportada)
-    );
-
     const porAsesor = countBy(
-      entregasFisicasRealizadas,
+      sorted,
       (row) => row.asesor_ventas,
       "asesor"
     ).slice(0, 10);
@@ -2447,19 +2580,11 @@ export default function App() {
       "modelo"
     ).slice(0, 10);
 
-    const sinCapturarTipoVenta = sorted.filter(
-  (row) => !normalizeStr(row.tipo_venta)
-).length;
-
-const porTipoVenta = [
-  ...TIPO_VENTA.map((tipo) => ({
-    tipoVenta: tipo,
-    total: sorted.filter(
-      (row) => normalizeKey(row.tipo_venta) === normalizeKey(tipo)
-    ).length,
-  })),
-  { tipoVenta: "Sin capturar", total: sinCapturarTipoVenta },
-].sort((a, b) => b.total - a.total);
+    const porTipoVenta = countBy(
+      sorted,
+      (row) => row.tipo_venta,
+      "tipoVenta"
+    ).slice(0, 10);
 
     const porVersion = countBy(sorted, (row) => row.version, "version").slice(
       0,
@@ -2511,43 +2636,68 @@ const porTipoVenta = [
     };
   }, [chartData]);
 
- const resetFilters = () => {
-  setFilters({
-    q: "",
-    rangoDesde: "",
-    rangoHasta: "",
-    tipoVenta: "",
-  });
+  const resetFilters = () => {
+    setFilters({
+      q: "",
+      rangoDesde: "",
+      rangoHasta: "",
+      asesor: "",
+      tipoVenta: "",
+      modelo: "",
+      estado: "",
+    });
 
-  setCurrentWeekDate(new Date());
-};
+    setCurrentWeekDate(new Date());
+    setSelectedDay(toYMDLocal(new Date()));
+  };
 
   const setHoy = () => {
     const hoy = toYMDLocal(new Date());
 
     setCurrentWeekDate(new Date());
+    setSelectedDay(hoy);
     setFilters((prev) => ({ ...prev, rangoDesde: hoy, rangoHasta: hoy }));
   };
 
   const onChangeDateFilter = (key, value) => {
     setFilters((prev) => ({ ...prev, [key]: value }));
 
-    if (value) setCurrentWeekDate(parseYMDLocal(value));
+    if (value) {
+      setCurrentWeekDate(parseYMDLocal(value));
+      setSelectedDay(value);
+    }
   };
 
+  const selectedDayRows = useMemo(
+    () => filtered.filter((row) => toYMDLocal(row.fecha_hora_entrega) === selectedDay),
+    [filtered, selectedDay]
+  );
+
   return (
-    <div className="min-h-screen w-full overflow-x-hidden bg-slate-100 p-3 sm:p-5 lg:p-7">
-      <div className="mx-auto w-full max-w-[1800px] min-w-0">
-        <header className="mb-5 rounded-lg bg-[#131E5C] px-5 py-6 shadow-lg sm:px-7">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-            <div className="min-w-0">
-              <h1 className="truncate text-2xl font-black text-white sm:text-3xl">
-                Entregas {DEFAULT_DEALER}
-              </h1>
+    <div className="dashboard-page min-h-screen w-full overflow-x-hidden py-3 sm:py-5">
+      <div className="mx-auto w-[calc(100%-24px)] max-w-[1800px] min-w-0 sm:w-[calc(100%-40px)]">
+        <header
+          className="relative mb-3 pt-4"
+        >
+          <div className="relative z-10 flex min-h-[68px] flex-col gap-4 px-4 sm:px-6 lg:px-8 xl:flex-row xl:items-center xl:justify-between">
+            <div className="flex min-w-0 items-center gap-5">
+              <div className="hidden shrink-0 items-center gap-4 sm:flex">
+                <img className="h-20 w-20 shrink-0 object-contain" src="/vw_white.png" alt="Volkswagen" />
+                <span className="h-16 w-px bg-white/60" />
+              </div>
+              <div className="min-w-0">
+                <h1 className="truncate text-2xl font-black tracking-tight text-white sm:text-3xl">
+                  Entregas {DEFAULT_DEALER}
+                </h1>
+                <div className="mt-1.5 flex items-center gap-2 text-xs font-medium text-white/80 sm:text-sm">
+                  <CarFront className="h-4 w-4" />
+                  Gestión y programación de entregas
+                </div>
+              </div>
             </div>
 
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
-              <div className="inline-flex overflow-hidden rounded-lg bg-white p-1">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end xl:pt-12 xl:pr-[17%] 2xl:pr-[19%]">
+              <div className="inline-flex overflow-hidden rounded-xl border border-white/35 bg-[#061a46]/55 shadow-inner divide-x divide-white/20">
                 <ViewButton
                   active={viewMode === "agenda"}
                   onClick={() => setViewMode("agenda")}
@@ -2574,18 +2724,24 @@ const porTipoVenta = [
                 type="button"
                 onClick={refreshList}
                 disabled={loadingList}
-                className="inline-flex items-center justify-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-black text-[#131E5C] shadow-sm transition hover:bg-slate-100 disabled:opacity-60"
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-white px-4 py-2.5 text-xs font-black text-[#0b2257] shadow-lg transition hover:bg-slate-100 disabled:opacity-60"
               >
                 {loadingList ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
-                  <RefreshCcw className="h-4 w-4" />
+                  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M20 6v5h-5" />
+                    <path d="M4 18v-5h5" />
+                    <path d="M18.7 9A7 7 0 0 0 6.2 6.2L4 8" />
+                    <path d="M5.3 15A7 7 0 0 0 17.8 17.8L20 16" />
+                  </svg>
                 )}
 
                 Actualizar
               </button>
             </div>
           </div>
+          {viewMode === "agenda" ? <div className="relative z-10 mt-3 pb-1"><AgendaKpis stats={stats} /></div> : <div className="h-3" />}
         </header>
 
         {ctxError ? (
@@ -2594,20 +2750,19 @@ const porTipoVenta = [
           </div>
         ) : null}
 
-        <section className="mb-5 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="grid gap-3 md:grid-cols-12">
-            <div className="md:col-span-3">
-              <FilterBlock label="Búsqueda">
-                <div className="flex items-center gap-2 rounded-lg border border-slate-300 bg-slate-50 px-3 py-2.5 transition focus-within:border-[#131E5C] focus-within:bg-white">
-                  <Search className="h-4 w-4 shrink-0 text-[#131E5C]" />
+        <section className="mb-3 rounded-xl border border-slate-200 bg-white p-2 shadow-sm">
+          <div className="flex flex-wrap items-end gap-1.5 xl:flex-nowrap">
+            <div className="min-w-[220px] flex-[2_1_260px]">
+                <div className="flex h-8 items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 transition focus-within:border-[#131E5C]">
+                  <Search className="h-4 w-4 text-[#131E5C]" />
 
                   <input
                     value={filters.q}
                     onChange={(e) =>
                       setFilters((prev) => ({ ...prev, q: e.target.value }))
                     }
-                    placeholder="Buscar..."
-                    className="w-full min-w-0 bg-transparent text-sm font-semibold text-[#131E5C] outline-none placeholder:text-slate-400"
+                    placeholder="Buscar por cliente, teléfono, VIN, modelo..."
+                    className="w-full bg-transparent text-[11px] font-semibold text-[#131E5C] outline-none placeholder:text-slate-400"
                   />
 
                   {filters.q ? (
@@ -2616,68 +2771,54 @@ const porTipoVenta = [
                       onClick={() =>
                         setFilters((prev) => ({ ...prev, q: "" }))
                       }
-                      className="shrink-0 rounded-lg p-1 text-[#131E5C] hover:bg-slate-100 hover:text-red-500"
+                      className="rounded-lg p-1 text-[#131E5C] hover:bg-slate-100 hover:text-red-500"
                       aria-label="Limpiar búsqueda"
                     >
                       <X className="h-4 w-4" />
                     </button>
                   ) : null}
                 </div>
-              </FilterBlock>
             </div>
-
-            <div className="md:col-span-3">
-              <FilterBlock label="Desde">
+            {[
+              { key: "asesor", label: "Asesor", values: ASESORES },
+              { key: "tipoVenta", label: "Tipo de venta", values: TIPO_VENTA },
+              { key: "modelo", label: "Modelo", values: MODELOS },
+            ].map((filter) => (
+              <label key={filter.key} className="min-w-[110px] flex-1 text-[9px] font-black text-slate-500">{filter.label}
+                <select value={filters[filter.key]} onChange={(e) => setFilters((prev) => ({ ...prev, [filter.key]: e.target.value }))} className="mt-0.5 h-8 w-full rounded-lg border border-slate-200 bg-white px-2 text-[10px] font-bold text-[#131E5C] outline-none">
+                  <option value="">Todos</option>{filter.values.map((value) => <option key={value} value={value}>{value}</option>)}
+                </select>
+              </label>
+            ))}
+            <label className="min-w-[105px] flex-1 text-[9px] font-black text-slate-500">Estado
+              <select value={filters.estado} onChange={(e) => setFilters((prev) => ({ ...prev, estado: e.target.value }))} className="mt-0.5 h-8 w-full rounded-lg border border-slate-200 bg-white px-2 text-[10px] font-bold text-[#131E5C] outline-none">
+                <option value="">Todos</option><option value="confirmada">Confirmada</option><option value="programada">Programada</option><option value="por-confirmar">Por confirmar</option>
+              </select>
+            </label>
+            <label className="min-w-[125px] flex-1 text-[9px] font-black text-slate-500">Desde
                 <input
                   type="date"
                   value={filters.rangoDesde}
                   onChange={(e) =>
                     onChangeDateFilter("rangoDesde", e.target.value)
                   }
-                  className="w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2.5 text-sm font-semibold text-[#131E5C] outline-none transition focus:border-[#131E5C] focus:bg-white"
+                  className="mt-0.5 h-8 w-full rounded-lg border border-slate-200 bg-white px-2 text-[10px] font-semibold text-[#131E5C] outline-none"
                 />
-              </FilterBlock>
-            </div>
-
-            <div className="md:col-span-3">
-              <FilterBlock label="Hasta">
+            </label>
+            <label className="min-w-[125px] flex-1 text-[9px] font-black text-slate-500">Hasta
                 <input
                   type="date"
                   value={filters.rangoHasta}
                   onChange={(e) =>
                     onChangeDateFilter("rangoHasta", e.target.value)
                   }
-                  className="w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2.5 text-sm font-semibold text-[#131E5C] outline-none transition focus:border-[#131E5C] focus:bg-white"
+                  className="mt-0.5 h-8 w-full rounded-lg border border-slate-200 bg-white px-2 text-[10px] font-semibold text-[#131E5C] outline-none"
                 />
-              </FilterBlock>
-            </div>
-
-            <div className="md:col-span-3">
-              <FilterBlock label="Tipo de venta">
-                <select
-                  value={filters.tipoVenta}
-                  onChange={(e) =>
-                    setFilters((prev) => ({ ...prev, tipoVenta: e.target.value }))
-                  }
-                  className="w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2.5 text-sm font-semibold text-[#131E5C] outline-none transition focus:border-[#131E5C] focus:bg-white"
-                >
-                  <option value="">Todos</option>
-                  {TIPO_VENTA.map((tipo) => (
-                    <option key={tipo} value={tipo}>
-                      {tipo}
-                    </option>
-                  ))}
-                  <option value="Sin capturar">Sin capturar</option>
-                </select>
-              </FilterBlock>
-            </div>
-
-            <div className="md:col-span-12">
-              <div className="flex flex-wrap gap-2">
+            </label>
                 <button
                   type="button"
                   onClick={setHoy}
-                  className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-emerald-700"
+                  className="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg bg-[#0756a3] px-3 text-[10px] font-black text-white hover:bg-[#064780]"
                 >
                   <CalendarDays className="h-4 w-4" />
                   Hoy
@@ -2686,13 +2827,11 @@ const porTipoVenta = [
                 <button
                   type="button"
                   onClick={resetFilters}
-                  className="inline-flex items-center justify-center gap-2 rounded-lg border border-[#131E5C] bg-white px-4 py-2.5 text-sm font-bold text-[#131E5C] hover:bg-[#131E5C] hover:text-white"
+                  className="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-[10px] font-black text-[#131E5C] hover:bg-slate-50"
                 >
-                  <X className="h-4 w-4" />
-                  Limpiar filtros
+                  <SlidersHorizontal className="h-3.5 w-3.5" />
+                  Filtros
                 </button>
-              </div>
-            </div>
           </div>
         </section>
 
@@ -2704,16 +2843,51 @@ const porTipoVenta = [
               loading={loadingList}
               currentWeekDate={currentWeekDate}
               onDisponibleClick={abrirModalRegistro}
+              onCardClick={abrirModalDetalle}
             />
 
-            <AgendaWeekView
-              rows={agendaRows}
-              availabilityRows={agendaAvailabilityRows}
-              loading={loadingList}
-              currentWeekDate={currentWeekDate}
-              setCurrentWeekDate={setCurrentWeekDate}
-              onDisponibleClick={abrirModalRegistro}
-            />
+            <div
+              className="hidden gap-3 transition-[grid-template-columns] duration-300 xl:grid"
+              style={{ gridTemplateColumns: dayPanelOpen ? "minmax(0, 2.7fr) minmax(320px, 1fr)" : "minmax(0, 1fr) 42px" }}
+            >
+              <div className="min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+                <AgendaWeekView
+                  rows={agendaRows}
+                  availabilityRows={agendaAvailabilityRows}
+                  loading={loadingList}
+                  currentWeekDate={currentWeekDate}
+                  setCurrentWeekDate={setCurrentWeekDate}
+                  selectedDay={selectedDay}
+                  setSelectedDay={setSelectedDay}
+                  agendaMode={agendaMode}
+                  setAgendaMode={setAgendaMode}
+                  onDisponibleClick={abrirModalRegistro}
+                  onCardClick={abrirModalDetalle}
+                />
+              </div>
+              <DayDeliveriesPanel
+                date={selectedDay}
+                rows={selectedDayRows}
+                onCardClick={abrirModalDetalle}
+                collapsed={!dayPanelOpen}
+                onToggle={() => setDayPanelOpen((open) => !open)}
+              />
+            </div>
+            <div className="hidden overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm lg:block xl:hidden">
+              <AgendaWeekView
+                rows={agendaRows}
+                availabilityRows={agendaAvailabilityRows}
+                loading={loadingList}
+                currentWeekDate={currentWeekDate}
+                setCurrentWeekDate={setCurrentWeekDate}
+                selectedDay={selectedDay}
+                setSelectedDay={setSelectedDay}
+                agendaMode={agendaMode}
+                setAgendaMode={setAgendaMode}
+                onDisponibleClick={abrirModalRegistro}
+                onCardClick={abrirModalDetalle}
+              />
+            </div>
           </>
         ) : null}
 
@@ -2885,10 +3059,18 @@ const porTipoVenta = [
         <ModalRegistroEntrega
           abierto={modalRegistro.abierto}
           fechaEntregaInicial={modalRegistro.fechaEntrega}
-          entregasOcupadas={dealerRows}
+          entregasExistentes={dealerRows}
           onClose={cerrarModalRegistro}
           onGuardado={handleEntregaGuardada}
         />
+
+        {modalDetalle ? (
+          <ModalDetalleEntrega
+            entrega={modalDetalle}
+            onClose={cerrarModalDetalle}
+            onActualizado={handleEntregaActualizada}
+          />
+        ) : null}
       </div>
     </div>
   );
